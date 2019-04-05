@@ -86,7 +86,11 @@ class Account(MPTTModel):
 
     TYPES = Choices(
         ("AS", "asset", "Asset"),  # Eg. Cash in bank
-        ("LI", "liability", "Liability"),  # Eg. Loans, bills paid after the fact (in arrears)
+        (
+            "LI",
+            "liability",
+            "Liability",
+        ),  # Eg. Loans, bills paid after the fact (in arrears)
         ("IN", "income", "Income"),  # Eg. Sales, housemate contributions
         ("EX", "expense", "Expense"),  # Eg. Office supplies, paying bills
         ("EQ", "equity", "Equity"),  # Eg. Money from shares
@@ -103,7 +107,9 @@ class Account(MPTTModel):
         on_delete=models.CASCADE,
     )
     code = models.CharField(max_length=3, null=True, blank=True)
-    full_code = models.CharField(max_length=100, db_index=True, unique=True, null=True, blank=True)
+    full_code = models.CharField(
+        max_length=100, db_index=True, unique=True, null=True, blank=True
+    )
     # TODO: Implement this child_code_width field, as it is probably a good idea
     # child_code_width = models.PositiveSmallIntegerField(default=1)
     type = models.CharField(max_length=2, choices=TYPES, blank=True)
@@ -164,10 +170,14 @@ class Account(MPTTModel):
     @classmethod
     def validate_accounting_equation(cls):
         """Check that all accounts sum to 0"""
-        balances = [account.balance(raw=True) for account in Account.objects.root_nodes()]
+        balances = [
+            account.balance(raw=True) for account in Account.objects.root_nodes()
+        ]
         if sum(balances, Balance()) != 0:
             raise exceptions.AccountingEquationViolationError(
-                "Account balances do not sum to zero. They sum to {}".format(sum(balances))
+                "Account balances do not sum to zero. They sum to {}".format(
+                    sum(balances)
+                )
             )
 
     def __str__(self):
@@ -300,7 +310,9 @@ class Account(MPTTModel):
             # the caller wants to reduce the first account and increase the second
             # (which is opposite to the implicit behaviour)
             direction = -1
-        elif self.type == self.TYPES.liability and to_account.type == self.TYPES.expense:
+        elif (
+            self.type == self.TYPES.liability and to_account.type == self.TYPES.expense
+        ):
             # Transfers from liability -> asset accounts should reduce both.
             # For example, moving money from Rent Payable (liability) to your Rent (expense) account
             # should use the funds you've built up in the liability account to pay off the expense account.
@@ -309,8 +321,12 @@ class Account(MPTTModel):
             direction = 1
 
         transaction = Transaction.objects.create(**transaction_kwargs)
-        Leg.objects.create(transaction=transaction, account=self, amount=+amount * direction)
-        Leg.objects.create(transaction=transaction, account=to_account, amount=-amount * direction)
+        Leg.objects.create(
+            transaction=transaction, account=self, amount=+amount * direction
+        )
+        Leg.objects.create(
+            transaction=transaction, account=to_account, amount=-amount * direction
+        )
         return transaction
 
 
@@ -417,7 +433,9 @@ class Leg(models.Model):
     """
 
     uuid = SmallUUIDField(default=uuid_default(), editable=False)
-    transaction = models.ForeignKey(Transaction, related_name="legs", on_delete=models.CASCADE)
+    transaction = models.ForeignKey(
+        Transaction, related_name="legs", on_delete=models.CASCADE
+    )
     account = models.ForeignKey(Account, related_name="legs", on_delete=models.CASCADE)
     amount = MoneyField(
         max_digits=MAX_DIGITS,
@@ -503,7 +521,9 @@ class StatementImport(models.Model):
     uuid = SmallUUIDField(default=uuid_default(), editable=False)
     timestamp = models.DateTimeField(default=timezone.now)
     # TODO: Add constraint to ensure destination account expects statements (copy 0007)
-    bank_account = models.ForeignKey(Account, related_name="imports", on_delete=models.CASCADE)
+    bank_account = models.ForeignKey(
+        Account, related_name="imports", on_delete=models.CASCADE
+    )
     source = models.CharField(
         max_length=20,
         help_text="A value uniquely identifying where this data came from. "
@@ -511,7 +531,8 @@ class StatementImport(models.Model):
     )
     extra = JSONField(
         default=json_default,
-        help_text="Any extra data relating to the import, probably specific " "to the data source.",
+        help_text="Any extra data relating to the import, probably specific "
+        "to the data source.",
     )
 
     objects = StatementImportManager()
@@ -606,7 +627,9 @@ class StatementLine(models.Model):
         Leg.objects.create(
             transaction=transaction, account=from_account, amount=+(self.amount * -1)
         )
-        Leg.objects.create(transaction=transaction, account=to_account, amount=-(self.amount * -1))
+        Leg.objects.create(
+            transaction=transaction, account=to_account, amount=-(self.amount * -1)
+        )
 
         transaction.date = self.date
         transaction.save()
@@ -614,3 +637,21 @@ class StatementLine(models.Model):
         self.transaction = transaction
         self.save()
         return transaction
+
+
+class Deposit(Transaction):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    STATE_TYPES = [(PENDING, "Pending"), (COMPLETE, "Complete"), (FAILED, _("Failed"))]
+    state = models.CharField(max_length=10, choices=STATE_TYPES, default=PENDING)
+    reference_data = JSONField()
+
+
+class Withdraw(Transaction):
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    STATE_TYPES = [(PENDING, "Pending"), (COMPLETE, "Complete"), (FAILED, _("Failed"))]
+    state = models.CharField(max_length=10, choices=STATE_TYPES, default=PENDING)
+    reference_data = JSONField()
