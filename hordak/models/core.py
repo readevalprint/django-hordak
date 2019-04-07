@@ -23,7 +23,7 @@ from django.contrib.postgres.fields.jsonb import JSONField
 from django.db import models
 from django.utils import timezone
 from django.db import transaction as db_transaction
-from django_smalluuid.models import SmallUUIDField, uuid_default
+from django_smalluuid.models import SmallUUIDField, uuid_typed_default
 from djmoney.models.fields import MoneyField
 from moneyed import Money
 
@@ -56,7 +56,7 @@ class AccountManager(TreeManager):
     def get_by_natural_key(self, uuid):
         return self.get(uuid=uuid)
 
-
+ACCOUNT_TYPE = 1
 class Account(MPTTModel):
     """ Represents an account
 
@@ -96,7 +96,7 @@ class Account(MPTTModel):
         ("EQ", "equity", "Equity"),  # Eg. Money from shares
         ("TR", "trading", "Currency Trading"),  # Used to represent currency conversions
     )
-    uuid = SmallUUIDField(default=uuid_default(), editable=False)
+    uuid = SmallUUIDField(default=uuid_typed_default(type=ACCOUNT_TYPE), editable=False)
     name = models.CharField(max_length=50)
     parent = TreeForeignKey(
         "self",
@@ -182,6 +182,7 @@ class Account(MPTTModel):
 
     def __str__(self):
         name = self.name or "Unnamed Account"
+        name =  str(self.uuid) + ' ' + self.name
         if self.is_leaf_node():
             try:
                 balance = self.balance()
@@ -334,7 +335,7 @@ class TransactionManager(models.Manager):
     def get_by_natural_key(self, uuid):
         return self.get(uuid=uuid)
 
-
+TRANSACTION_TYPE=2
 class Transaction(models.Model):
     """ Represents a transaction
 
@@ -373,7 +374,7 @@ class Transaction(models.Model):
 
     """
 
-    uuid = SmallUUIDField(default=uuid_default(), editable=False)
+    uuid = SmallUUIDField(default=uuid_typed_default(type=TRANSACTION_TYPE), editable=False)
     timestamp = models.DateTimeField(
         default=timezone.now, help_text="The creation date of this transaction object"
     )
@@ -414,7 +415,7 @@ class LegManager(models.Manager):
         """Filter for legs that were credits"""
         return self.filter(amount__lt=0)
 
-
+LEG_TYPE = 3
 class Leg(models.Model):
     """ The leg of a transaction
 
@@ -432,7 +433,7 @@ class Leg(models.Model):
 
     """
 
-    uuid = SmallUUIDField(default=uuid_default(), editable=False)
+    uuid = SmallUUIDField(default=uuid_typed_default(type=LEG_TYPE), editable=False)
     transaction = models.ForeignKey(
         Transaction, related_name="legs", on_delete=models.CASCADE
     )
@@ -505,7 +506,7 @@ class StatementImportManager(models.Manager):
     def get_by_natural_key(self, uuid):
         return self.get(uuid=uuid)
 
-
+STATEMENTIMPORT_TYPE = 4
 class StatementImport(models.Model):
     """ Records an import of a bank statement
 
@@ -518,7 +519,7 @@ class StatementImport(models.Model):
 
     """
 
-    uuid = SmallUUIDField(default=uuid_default(), editable=False)
+    uuid = SmallUUIDField(default=uuid_typed_default(type=STATEMENTIMPORT_TYPE), editable=False)
     timestamp = models.DateTimeField(default=timezone.now)
     # TODO: Add constraint to ensure destination account expects statements (copy 0007)
     bank_account = models.ForeignKey(
@@ -545,7 +546,7 @@ class StatementLineManager(models.Manager):
     def get_by_natural_key(self, uuid):
         return self.get(uuid=uuid)
 
-
+STATEMENTLINE_TYPE = 5
 class StatementLine(models.Model):
     """ Records an single imported bank statement line
 
@@ -568,7 +569,7 @@ class StatementLine(models.Model):
             occurs during reconciliation. See also :meth:`StatementLine.create_transaction()`.
     """
 
-    uuid = SmallUUIDField(default=uuid_default(), editable=False)
+    uuid = SmallUUIDField(default=uuid_typed_default(type=STATEMENTLINE_TYPE), editable=False)
     timestamp = models.DateTimeField(default=timezone.now)
     date = models.DateField()
     statement_import = models.ForeignKey(
@@ -639,19 +640,14 @@ class StatementLine(models.Model):
         return transaction
 
 
+from river.models.fields.state import StateField
+
+
 class Deposit(Transaction):
-    PENDING = "pending"
-    COMPLETE = "complete"
-    FAILED = "failed"
-    STATE_TYPES = [(PENDING, "Pending"), (COMPLETE, "Complete"), (FAILED, _("Failed"))]
-    state = models.CharField(max_length=10, choices=STATE_TYPES, default=PENDING)
+    status = StateField()
     reference_data = JSONField()
 
 
 class Withdraw(Transaction):
-    PENDING = "pending"
-    COMPLETE = "complete"
-    FAILED = "failed"
-    STATE_TYPES = [(PENDING, "Pending"), (COMPLETE, "Complete"), (FAILED, _("Failed"))]
-    state = models.CharField(max_length=10, choices=STATE_TYPES, default=PENDING)
+    status = StateField()
     reference_data = JSONField()
